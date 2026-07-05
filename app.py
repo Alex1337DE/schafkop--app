@@ -25,11 +25,9 @@ if "step" not in st.session_state:
 
     st.session_state.history = []
 
-    # Kreuzmodus
     st.session_state.kreuz_mode = False
     st.session_state.kreuz_left = 0
 
-    # Inputs
     st.session_state.schneider = False
     st.session_state.schwarz = False
     st.session_state.lauf = 0
@@ -37,6 +35,14 @@ if "step" not in st.session_state:
     st.session_state.hint = ""
 
 st.title("🃏 Schafkopf Rechner")
+
+# ============================
+# LETZTES SPIEL ANZEIGEN
+# ============================
+if st.session_state.history:
+    last = st.session_state.history[-1]
+    st.subheader("📌 Letztes Spiel")
+    st.write(last)
 
 # ============================
 # SETUP
@@ -87,34 +93,31 @@ if st.session_state.kreuz_mode:
     st.error(f"🔥 KREUZMODUS aktiv ({st.session_state.kreuz_left}/4)")
 
 # ============================
-# SPIELMODUS
+# SPIEL
 # ============================
 game = None
 winner = []
 solo = None
 
 # ============================
-# KREUZSPIEL
+# KREUZSPIEL (FIXE PAARE)
 # ============================
 if st.session_state.kreuz_mode:
 
     st.subheader("🔥 Kreuzspiel")
 
-    pair1 = st.multiselect("🟦 Paar 1", players)
-    pair2 = st.multiselect("🟥 Paar 2", players)
+    pair1 = [players[0], players[2]]  # 1 + 3
+    pair2 = [players[1], players[3]]  # 2 + 4
+
+    st.write(f"🟦 Paar 1: {pair1}")
+    st.write(f"🟥 Paar 2: {pair2}")
 
     st.session_state.kreuz_lauf = st.number_input("Laufende", 0, 10, 0)
     st.session_state.kreuz_leger = st.number_input("Leger", 0, 3, 0)
     st.session_state.kreuz_schneider = st.checkbox("Schneider")
     st.session_state.kreuz_schwarz = st.checkbox("Schwarz")
 
-    winner_pair = None
-
-    if len(pair1) == 2 and len(pair2) == 2:
-        if set(pair1).isdisjoint(set(pair2)):
-            winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
-        else:
-            st.error("❌ Spieler doppelt vergeben")
+    winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
     game = "KREUZ"
 
@@ -197,7 +200,7 @@ if st.button("💰 Abrechnen") and game:
             row[p] = -per
             st.session_state.balance[p] -= per
 
-        row["Hinweis"] += f" | KREUZ L:{st.session_state.kreuz_lauf} S:{st.session_state.kreuz_schneider} SZ:{st.session_state.kreuz_schwarz}"
+        row["Hinweis"] += f" | KREUZ"
 
         st.session_state.kreuz_left -= 1
 
@@ -210,14 +213,14 @@ if st.button("💰 Abrechnen") and game:
     # ============================
     else:
 
-        factor = 1 if result == "Gewonnen" else -1
-
         def base(g):
             if g == "Rufspiel":
                 return BASE_RUF
             if g in SOLOS:
                 return BASE_SOLO
             return BASE_RAM
+
+        factor = 1 if result == "Gewonnen" else -1
 
         b = base(game)
         b += st.session_state.lauf * LAUF
@@ -285,28 +288,12 @@ for p, v in st.session_state.balance.items():
 if st.button("↩️ Undo"):
 
     if st.session_state.history:
-
         last = st.session_state.history.pop()
 
-        # Kontostand zurückrechnen
-        for p in st.session_state.players:
+        for p in players:
             st.session_state.balance[p] -= last.get(p, 0)
 
         st.session_state.round -= 1
-
-        # ============================
-        # WICHTIG: KREUZSTATUS RÜCKGÄNGIG
-        # ============================
-        if st.session_state.kreuz_mode:
-
-            # Kreuzrunde wurde zurückgenommen
-            st.session_state.kreuz_left += 1
-
-            # Wenn vorher Kreuzstart aus Herzsolo kam
-            # und wir wieder im ersten Kreuzschritt sind → sauber zurücksetzen
-            if st.session_state.kreuz_left >= 4:
-                st.session_state.kreuz_mode = False
-                st.session_state.kreuz_left = 0
 
         st.rerun()
 
