@@ -176,6 +176,9 @@ if st.session_state.state == "GAME":
     # ============================
     if st.button("💰 Abrechnen"):
 
+        # ----------------------------
+        # CALC
+        # ----------------------------
         if st.session_state.kreuz_active:
             changes = calc_cross(players, data)
 
@@ -189,7 +192,7 @@ if st.session_state.state == "GAME":
         else:
             changes = calc(game_mode, players, data)
 
-            # HERZSOLO TRIGGER
+            # HERZSOLO START KREUZ
             if game_mode == "Herzsolo" and len(players) == 4:
 
                 solo = data.get("solo", players[0])
@@ -199,7 +202,9 @@ if st.session_state.state == "GAME":
 
                 st.session_state.kreuz_pairs = create_cross_pairs(players, solo)
 
-        # APPLY CHANGES
+        # ----------------------------
+        # APPLY
+        # ----------------------------
         for p, v in changes.items():
             st.session_state.balance[p] += v
 
@@ -227,3 +232,33 @@ st.subheader("💰 Kontostand")
 
 for p, v in st.session_state.balance.items():
     st.write(f"{p}: {v:.2f}")
+
+# ============================
+# UNDO
+# ============================
+if st.button("↩️ Undo letzte Runde"):
+
+    if st.session_state.history:
+        last = st.session_state.history.pop()
+
+        for p in st.session_state.balance:
+            st.session_state.balance[p] -= last.get(p, 0)
+
+        st.session_state.round -= 1
+        st.rerun()
+
+# ============================
+# SPIELTAG BEENDEN
+# ============================
+if st.button("🏁 Spieltag beenden"):
+
+    st.session_state.history = []
+    st.session_state.round = 1
+    st.session_state.balance = {p: 0 for p in st.session_state.players}
+
+    st.session_state.kreuz_active = False
+    st.session_state.kreuz_rounds_left = 0
+    st.session_state.kreuz_pairs = None
+    st.session_state.kreuz_solo = None
+
+    st.rerun()
