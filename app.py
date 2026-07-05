@@ -118,12 +118,17 @@ solo = None
 # ----------------------------
 if st.session_state.kreuz_mode:
 
-    st.subheader("🔥 Kreuzspiel – Paardefinition")
+    st.subheader("🔥 Kreuzspiel")
 
-    st.info("Wähle die Paare für diese Runde")
+    st.info("Paare + Zusatzwerte für diese Runde")
 
     pair1 = st.multiselect("🟦 Paar 1", players)
     pair2 = st.multiselect("🟥 Paar 2", players)
+
+    st.session_state.kreuz_lauf = st.number_input("Laufende", 0, 10, 0)
+    st.session_state.kreuz_leger = st.number_input("Leger", 0, 3, 0)
+    st.session_state.kreuz_schneider = st.checkbox("Schneider")
+    st.session_state.kreuz_schwarz = st.checkbox("Schwarz")
 
     winner_pair = None
 
@@ -137,39 +142,9 @@ if st.session_state.kreuz_mode:
             )
 
         else:
-            st.error("❌ Spieler dürfen nicht in beiden Paaren sein")
+            st.error("❌ Spieler doppelt vergeben")
 
     game = "KREUZ"
-
-else:
-
-    games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
-
-    cols = st.columns(4)
-    selected = []
-
-    for i, g in enumerate(games):
-        if cols[i % 4].checkbox(g):
-            selected.append(g)
-
-    game = selected[0] if selected else None
-
-    result = st.radio("Spielausgang", ["Gewonnen", "Verloren"], horizontal=True)
-
-    winner = []
-    solo = None
-
-    if game == "Rufspiel":
-        winner = st.multiselect("Gewinner (2)", players)
-
-    elif game in SOLOS:
-        solo = st.selectbox("Solo Spieler", players)
-
-    st.session_state.schneider = st.checkbox("Schneider")
-    st.session_state.schwarz = st.checkbox("Schwarz")
-    st.session_state.lauf = st.number_input("Laufende", 0, 10, 0)
-    st.session_state.leger = st.number_input("Leger", 0, 3, 0)
-    st.session_state.hint = st.text_input("Hinweis")
 
 # ============================
 # CALC
@@ -202,28 +177,47 @@ if st.button("💰 Abrechnen") and game:
     # ============================
     if st.session_state.kreuz_mode:
 
-        if winner_pair == "Paar 1":
-            win = pair1
-            lose = pair2
-        else:
-            win = pair2
-            lose = pair1
+    BASE = 0.10  # wie Rufspiel
+    LAUF = 0.05
 
-        for p in win:
-            row[p] = 1
-            st.session_state.balance[p] += 1
+    b = BASE
+    b += st.session_state.kreuz_lauf * LAUF
 
-        for p in lose:
-            row[p] = -1
-            st.session_state.balance[p] -= 1
+    if st.session_state.kreuz_schneider:
+        b += 0.10
+    if st.session_state.kreuz_schwarz:
+        b += 0.10
 
-        row["Hinweis"] += f" | P1:{pair1} P2:{pair2}"
+    pot = b * len(players) * (2 ** st.session_state.kreuz_leger)
+    per = pot / len(players)
 
-        st.session_state.kreuz_left -= 1
+    if winner_pair == "Paar 1":
+        win = pair1
+        lose = pair2
+    else:
+        win = pair2
+        lose = pair1
 
-        if st.session_state.kreuz_left <= 0:
-            st.session_state.kreuz_mode = False
-            reset_inputs()
+    for p in win:
+        row[p] = per
+        st.session_state.balance[p] += per
+
+    for p in lose:
+        row[p] = -per
+        st.session_state.balance[p] -= per
+
+    row["Hinweis"] += (
+        f" | KREUZ L:{st.session_state.kreuz_lauf}"
+        f" S:{st.session_state.kreuz_schneider}"
+        f" SZ:{st.session_state.kreuz_schwarz}"
+        f" LEGER:{st.session_state.kreuz_leger}"
+    )
+
+    st.session_state.kreuz_left -= 1
+
+    if st.session_state.kreuz_left <= 0:
+        st.session_state.kreuz_mode = False
+        reset_inputs()
 
     # ============================
     # NORMALES SPIEL
