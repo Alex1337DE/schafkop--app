@@ -19,7 +19,24 @@ LAUF = 0.05
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
 
 # ============================
-# ENGINE (MUSS VOR DER NUTZUNG STEHEN)
+# TISCH-LOGIK (NEU)
+# ============================
+def create_cross_pairs(players, solo_player):
+    A, B, C, D = players[:4]
+
+    if solo_player == A:
+        return [ [A, D], [B, C] ]
+    if solo_player == B:
+        return [ [B, C], [A, D] ]
+    if solo_player == C:
+        return [ [C, B], [D, A] ]
+    if solo_player == D:
+        return [ [D, A], [C, B] ]
+
+    return [ [A, D], [B, C] ]
+
+# ============================
+# ENGINE
 # ============================
 def calc(game, players, data):
 
@@ -33,7 +50,6 @@ def calc(game, players, data):
     # RUF
     # ----------------------------
     if game == "Rufspiel":
-
         for p in players:
             out[p] = per if p in data.get("winner", []) else -per
 
@@ -41,7 +57,6 @@ def calc(game, players, data):
     # SOLO
     # ----------------------------
     elif game in SOLOS:
-
         for p in players:
             out[p] = per * (len(players) - 1) if p == data.get("solo") else -per
 
@@ -49,12 +64,11 @@ def calc(game, players, data):
     # RAMSCH
     # ----------------------------
     elif game == "Ramsch":
-
         for p in players:
             out[p] = per * (len(players) - 1) if p == data.get("loser") else -per
 
     # ----------------------------
-    # KREUZ
+    # KREUZ (FIXE PAARE)
     # ----------------------------
     elif game == "KREUZ":
 
@@ -67,7 +81,6 @@ def calc(game, players, data):
 
         for p in win:
             out[p] = per
-
         for p in lose:
             out[p] = -per
 
@@ -84,36 +97,34 @@ if "state" not in st.session_state:
     st.session_state.round = 1
     st.session_state.history = []
 
-    # Kreuz-State
+    # Kreuz
     st.session_state.kreuz_active = False
     st.session_state.kreuz_round = 0
     st.session_state.kreuz_pairs = None
+    st.session_state.kreuz_solo = None
 
 st.title("🧠 Schafkopf STATE ENGINE")
 
 players = st.session_state.players
 
 # ============================
-# SETUP STATE
+# SETUP
 # ============================
 if st.session_state.state == "SETUP":
 
     n = st.selectbox("Spieleranzahl", [4, 5])
-
     names = [st.text_input(f"Spieler {i+1}") for i in range(n)]
 
     if st.button("Start"):
-
         st.session_state.players = names
         st.session_state.balance = {p: 0 for p in names}
-
         st.session_state.state = "GAME"
         st.rerun()
 
     st.stop()
 
 # ============================
-# GAME STATE
+# GAME
 # ============================
 if st.session_state.state == "GAME":
 
@@ -150,7 +161,6 @@ if st.session_state.state == "GAME":
     else:
 
         game = st.radio("Spiel", list(BASE.keys()))
-
         data = {}
 
         if game == "Rufspiel":
@@ -163,7 +173,6 @@ if st.session_state.state == "GAME":
             data["loser"] = st.selectbox("Verlierer", players)
 
         data["result"] = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
-
         data["lauf"] = st.number_input("Laufende", 0, 10, 0)
         data["leger"] = st.number_input("Leger", 0, 3, 0)
 
@@ -187,22 +196,25 @@ if st.session_state.state == "GAME":
         # HERZSOLO → KREUZ START
         # ============================
         if game == "Herzsolo" and len(players) == 4:
+
+            solo = data.get("solo", players[0])
+            st.session_state.kreuz_solo = solo
             st.session_state.kreuz_active = True
             st.session_state.kreuz_round = 4
-            st.session_state.kreuz_pairs = [
-                players[:2],
-                players[2:4]
-            ]
+
+            st.session_state.kreuz_pairs = create_cross_pairs(players, solo)
 
         # ============================
         # KREUZ COUNTDOWN
         # ============================
         elif game == "KREUZ":
+
             st.session_state.kreuz_round -= 1
 
             if st.session_state.kreuz_round <= 0:
                 st.session_state.kreuz_active = False
                 st.session_state.kreuz_pairs = None
+                st.session_state.kreuz_solo = None
 
         st.session_state.round += 1
         st.rerun()
