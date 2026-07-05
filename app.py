@@ -103,7 +103,7 @@ if "state" not in st.session_state:
     st.session_state.kreuz_pairs = None
     st.session_state.kreuz_solo = None
 
-st.title("🧠 Schafkopf STATE ENGINE")
+st.title("🧠 Schafkopf-Rechner")
 
 players = st.session_state.players
 
