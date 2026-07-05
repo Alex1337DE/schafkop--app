@@ -282,7 +282,7 @@ for p, v in st.session_state.balance.items():
 # ============================
 # UNDO
 # ============================
-iif st.button("↩️ Undo"):
+if st.button("↩️ Undo"):
 
     if st.session_state.history:
 
