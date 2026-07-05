@@ -282,15 +282,31 @@ for p, v in st.session_state.balance.items():
 # ============================
 # UNDO
 # ============================
-if st.button("↩️ Undo"):
+iif st.button("↩️ Undo"):
 
     if st.session_state.history:
+
         last = st.session_state.history.pop()
 
-        for p in players:
+        # Kontostand zurückrechnen
+        for p in st.session_state.players:
             st.session_state.balance[p] -= last.get(p, 0)
 
         st.session_state.round -= 1
+
+        # ============================
+        # WICHTIG: KREUZSTATUS RÜCKGÄNGIG
+        # ============================
+        if st.session_state.kreuz_mode:
+
+            # Kreuzrunde wurde zurückgenommen
+            st.session_state.kreuz_left += 1
+
+            # Wenn vorher Kreuzstart aus Herzsolo kam
+            # und wir wieder im ersten Kreuzschritt sind → sauber zurücksetzen
+            if st.session_state.kreuz_left >= 4:
+                st.session_state.kreuz_mode = False
+                st.session_state.kreuz_left = 0
 
         st.rerun()
 
