@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 # ============================
-# RULES / ENGINE CONFIG
+# RULES
 # ============================
 BASE = {
     "Rufspiel": 0.10,
@@ -19,70 +19,67 @@ LAUF = 0.05
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
 
 # ============================
-# TISCH-LOGIK (NEU)
+# CROSS ENGINE (NEU SAUBER)
 # ============================
 def create_cross_pairs(players, solo_player):
     A, B, C, D = players[:4]
 
-    if solo_player == A:
-        return [ [A, D], [B, C] ]
-    if solo_player == B:
-        return [ [B, C], [A, D] ]
-    if solo_player == C:
-        return [ [C, B], [D, A] ]
-    if solo_player == D:
-        return [ [D, A], [C, B] ]
+    seats = {A: 0, B: 1, C: 2, D: 3}
+    s = seats[solo_player]
 
-    return [ [A, D], [B, C] ]
+    if s == 0:
+        return [[A, D], [B, C]]
+    if s == 1:
+        return [[B, C], [A, D]]
+    if s == 2:
+        return [[C, B], [D, A]]
+    if s == 3:
+        return [[D, A], [C, B]]
 
-# ============================
-# ENGINE
-# ============================
-def calc(game, players, data):
+    return [[A, D], [B, C]]
 
-    base = BASE[game] + data.get("lauf", 0) * LAUF
+
+def calc_cross(players, data):
+    pair1, pair2 = st.session_state.kreuz_pairs
+
+    base = 0.10 + data.get("lauf", 0) * LAUF
     base *= (2 ** data.get("leger", 0))
-    per = base
 
     out = {}
 
-    # ----------------------------
-    # RUF
-    # ----------------------------
+    if data["winner_pair"] == "Paar 1":
+        win, lose = pair1, pair2
+    else:
+        win, lose = pair2, pair1
+
+    for p in win:
+        out[p] = base
+    for p in lose:
+        out[p] = -base
+
+    return out
+
+
+def calc(game, players, data):
+
+    out = {}
+
+    base = BASE.get(game, 0) + data.get("lauf", 0) * LAUF
+    base *= (2 ** data.get("leger", 0))
+
+    per = base
+
     if game == "Rufspiel":
         for p in players:
             out[p] = per if p in data.get("winner", []) else -per
 
-    # ----------------------------
-    # SOLO
-    # ----------------------------
     elif game in SOLOS:
         for p in players:
             out[p] = per * (len(players) - 1) if p == data.get("solo") else -per
 
-    # ----------------------------
-    # RAMSCH
-    # ----------------------------
     elif game == "Ramsch":
         for p in players:
             out[p] = per * (len(players) - 1) if p == data.get("loser") else -per
-
-    # ----------------------------
-    # KREUZ (FIXE PAARE)
-    # ----------------------------
-    elif game == "KREUZ":
-
-        pair1, pair2 = st.session_state.kreuz_pairs
-
-        if data["winner_pair"] == "Paar 1":
-            win, lose = pair1, pair2
-        else:
-            win, lose = pair2, pair1
-
-        for p in win:
-            out[p] = per
-        for p in lose:
-            out[p] = -per
 
     return out
 
@@ -97,13 +94,13 @@ if "state" not in st.session_state:
     st.session_state.round = 1
     st.session_state.history = []
 
-    # Kreuz
+    # CROSS STATE
     st.session_state.kreuz_active = False
-    st.session_state.kreuz_round = 0
+    st.session_state.kreuz_rounds_left = 0
     st.session_state.kreuz_pairs = None
     st.session_state.kreuz_solo = None
 
-st.title("🧠 Schafkopf-Rechner")
+st.title("🃏 Schafkopf Engine")
 
 players = st.session_state.players
 
@@ -131,23 +128,23 @@ if st.session_state.state == "GAME":
     st.info(f"Runde {st.session_state.round}")
 
     # ============================
-    # KREUZ MODE
+    # CROSS MODE
     # ============================
     if st.session_state.kreuz_active:
 
-        st.subheader("🔥 Kreuzrunde aktiv")
+        st.subheader("🔥 Kreuzmodus aktiv")
 
         pair1, pair2 = st.session_state.kreuz_pairs
 
-        st.write(f"🟦 Paar 1: {pair1}")
-        st.write(f"🟥 Paar 2: {pair2}")
+        st.write("🟦 Paar 1:", pair1)
+        st.write("🟥 Paar 2:", pair2)
 
         kreuz_lauf = st.number_input("Laufende", 0, 10, 0)
         kreuz_leger = st.number_input("Leger", 0, 3, 0)
 
         winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
-        game = "KREUZ"
+        game_mode = "KREUZ"
 
         data = {
             "lauf": kreuz_lauf,
@@ -156,23 +153,22 @@ if st.session_state.state == "GAME":
         }
 
     # ============================
-    # NORMAL GAME
+    # NORMAL MODE
     # ============================
     else:
 
-        game = st.radio("Spiel", list(BASE.keys()))
+        game_mode = st.radio("Spiel", list(BASE.keys()))
         data = {}
 
-        if game == "Rufspiel":
+        if game_mode == "Rufspiel":
             data["winner"] = st.multiselect("Gewinner", players)
 
-        elif game in SOLOS:
+        elif game_mode in SOLOS:
             data["solo"] = st.selectbox("Solo Spieler", players)
 
-        elif game == "Ramsch":
+        elif game_mode == "Ramsch":
             data["loser"] = st.selectbox("Verlierer", players)
 
-        data["result"] = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
         data["lauf"] = st.number_input("Laufende", 0, 10, 0)
         data["leger"] = st.number_input("Leger", 0, 3, 0)
 
@@ -181,40 +177,38 @@ if st.session_state.state == "GAME":
     # ============================
     if st.button("💰 Abrechnen"):
 
-        changes = calc(game, players, data)
+        if st.session_state.kreuz_active:
+            changes = calc_cross(players, data)
 
+            st.session_state.kreuz_rounds_left -= 1
+
+            if st.session_state.kreuz_rounds_left <= 0:
+                st.session_state.kreuz_active = False
+                st.session_state.kreuz_pairs = None
+                st.session_state.kreuz_solo = None
+
+        else:
+            changes = calc(game_mode, players, data)
+
+            # HERZSOLO TRIGGER
+            if game_mode == "Herzsolo" and len(players) == 4:
+
+                solo = data.get("solo", players[0])
+                st.session_state.kreuz_active = True
+                st.session_state.kreuz_rounds_left = 4
+                st.session_state.kreuz_solo = solo
+
+                st.session_state.kreuz_pairs = create_cross_pairs(players, solo)
+
+        # APPLY CHANGES
         for p, v in changes.items():
             st.session_state.balance[p] += v
 
         st.session_state.history.append({
             "time": str(datetime.now()),
-            "game": game,
+            "game": game_mode,
             **changes
         })
-
-        # ============================
-        # HERZSOLO → KREUZ START
-        # ============================
-        if game == "Herzsolo" and len(players) == 4:
-
-            solo = data.get("solo", players[0])
-            st.session_state.kreuz_solo = solo
-            st.session_state.kreuz_active = True
-            st.session_state.kreuz_round = 4
-
-            st.session_state.kreuz_pairs = create_cross_pairs(players, solo)
-
-        # ============================
-        # KREUZ COUNTDOWN
-        # ============================
-        elif game == "KREUZ":
-
-            st.session_state.kreuz_round -= 1
-
-            if st.session_state.kreuz_round <= 0:
-                st.session_state.kreuz_active = False
-                st.session_state.kreuz_pairs = None
-                st.session_state.kreuz_solo = None
 
         st.session_state.round += 1
         st.rerun()
