@@ -19,7 +19,7 @@ LAUF = 0.05
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
 
 # ============================
-# CROSS ENGINE (NEU SAUBER)
+# CROSS ENGINE
 # ============================
 def create_cross_pairs(players, solo_player):
     A, B, C, D = players[:4]
@@ -94,7 +94,6 @@ if "state" not in st.session_state:
     st.session_state.round = 1
     st.session_state.history = []
 
-    # CROSS STATE
     st.session_state.kreuz_active = False
     st.session_state.kreuz_rounds_left = 0
     st.session_state.kreuz_pairs = None
@@ -144,7 +143,7 @@ if st.session_state.state == "GAME":
 
         winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
-        game_mode = None
+        game_mode = "KREUZ"
 
         data = {
             "lauf": kreuz_lauf,
@@ -188,10 +187,7 @@ if st.session_state.state == "GAME":
                 st.session_state.kreuz_solo = None
 
         else:
-            if st.session_state.kreuz_active:
-                changes = calc_cross(players, data)
-        else:
-                changes = calc(game_mode, players, data)
+            changes = calc(game_mode, players, data)
 
             # HERZSOLO TRIGGER
             if game_mode == "Herzsolo" and len(players) == 4:
