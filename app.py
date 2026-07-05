@@ -118,15 +118,26 @@ solo = None
 # ----------------------------
 if st.session_state.kreuz_mode:
 
-    st.subheader("🔥 Kreuzspiel")
+    st.subheader("🔥 Kreuzspiel – Paardefinition")
 
-    p1, p2 = make_pairs(players)[0]
-    p3, p4 = make_pairs(players)[1]
+    st.info("Wähle die Paare für diese Runde")
 
-    st.write(f"🟦 Paar 1: {p1} + {p2}")
-    st.write(f"🟥 Paar 2: {p3} + {p4}")
+    pair1 = st.multiselect("🟦 Paar 1", players)
+    pair2 = st.multiselect("🟥 Paar 2", players)
 
-    winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
+    winner_pair = None
+
+    if len(pair1) == 2 and len(pair2) == 2:
+
+        if set(pair1).isdisjoint(set(pair2)):
+
+            winner_pair = st.radio(
+                "Gewonnenes Paar",
+                ["Paar 1", "Paar 2"]
+            )
+
+        else:
+            st.error("❌ Spieler dürfen nicht in beiden Paaren sein")
 
     game = "KREUZ"
 
@@ -189,30 +200,31 @@ if st.button("💰 Abrechnen") and game:
     # ============================
     # KREUZSPIEL
     # ============================
-    if st.session_state.kreuz_mode:
+ if st.session_state.kreuz_mode:
 
-        pairs = make_pairs(players)
+    if winner_pair == "Paar 1":
+        win = pair1
+        lose = pair2
+    else:
+        win = pair2
+        lose = pair1
 
-        if winner_pair == "Paar 1":
-            win = pairs[0]
-            lose = pairs[1]
-        else:
-            win = pairs[1]
-            lose = pairs[0]
+    for p in win:
+        row[p] = 1
+        st.session_state.balance[p] += 1
 
-        for p in win:
-            row[p] = 1
-            st.session_state.balance[p] += 1
+    for p in lose:
+        row[p] = -1
+        st.session_state.balance[p] -= 1
 
-        for p in lose:
-            row[p] = -1
-            st.session_state.balance[p] -= 1
+    # Speicherung der Paarung!
+    row["Hinweis"] += f" | P1:{pair1} P2:{pair2}"
 
-        st.session_state.kreuz_left -= 1
+    st.session_state.kreuz_left -= 1
 
-        if st.session_state.kreuz_left <= 0:
-            st.session_state.kreuz_mode = False
-            reset_inputs()
+    if st.session_state.kreuz_left <= 0:
+        st.session_state.kreuz_mode = False
+        reset_inputs()
 
     # ============================
     # NORMALES SPIEL
