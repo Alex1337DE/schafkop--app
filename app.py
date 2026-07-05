@@ -23,15 +23,11 @@ if "step" not in st.session_state:
     st.session_state.round = 1
     st.session_state.dealer = 0
     st.session_state.history = []
-
-    # 👉 NEU: letzter abgeschlossener Spieltag
     st.session_state.last_day_result = None
 
-    # Kreuzmodus
     st.session_state.kreuz_mode = False
     st.session_state.kreuz_left = 0
 
-    # Inputs
     st.session_state.lauf = 0
     st.session_state.leger = 0
     st.session_state.hint = ""
@@ -39,14 +35,21 @@ if "step" not in st.session_state:
 st.title("🃏 Schafkopf Rechner")
 
 # ============================
-# 🔥 LETZTES SPIELTAGERGEBNIS (GANZ OBEN!)
+# LETZTER SPIELTAG
 # ============================
 if st.session_state.last_day_result:
+
     st.subheader("📌 Letzter Spieltag")
-    st.dataframe(pd.DataFrame(st.session_state.last_day_result))
+
+    df_last = pd.DataFrame(
+        list(st.session_state.last_day_result.items()),
+        columns=["Spieler", "Ergebnis"]
+    )
+
+    st.dataframe(df_last, use_container_width=True)
 
 # ============================
-# SETUP: SPIELERANZAHL
+# SETUP
 # ============================
 if st.session_state.step == 1:
 
@@ -59,9 +62,6 @@ if st.session_state.step == 1:
 
     st.stop()
 
-# ============================
-# SETUP: NAMEN
-# ============================
 if st.session_state.step == 2:
 
     names = []
@@ -89,7 +89,7 @@ players = st.session_state.players
 st.info(f"Runde: {st.session_state.round}")
 
 # ============================
-# KREUZSPIEL (fixe Paare)
+# KREUZSPIEL
 # ============================
 if st.session_state.kreuz_mode:
 
@@ -128,6 +128,9 @@ else:
 
     result = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
 
+    winner = []
+    solo = None
+
     if game == "Rufspiel":
         winner = st.multiselect("Gewinner", players)
 
@@ -159,7 +162,6 @@ if st.button("💰 Abrechnen") and game:
     if st.session_state.kreuz_mode:
 
         BASE = 0.10
-
         b = BASE + kreuz_lauf * LAUF
 
         if kreuz_schneider:
@@ -204,11 +206,16 @@ if st.button("💰 Abrechnen") and game:
         factor = 1 if result == "Gewonnen" else -1
 
         b = base(game) + st.session_state.lauf * LAUF
-        pot = b * len(players) * (2 ** st.session_state.leger)
-        per = pot / len(players)
+        per = (b * len(players) * (2 ** st.session_state.leger)) / len(players)
 
         for p in players:
-            row[p] = per * factor if p in (winner if game == "Rufspiel" else [solo]) else -per * factor
+            if game == "Rufspiel":
+                row[p] = per * factor if p in winner else -per * factor
+            elif game in SOLOS:
+                row[p] = per * factor * (len(players)-1) if p == solo else -per * factor
+            else:
+                row[p] = -per
+
             st.session_state.balance[p] += row[p]
 
         if game == "Herzsolo" and len(players) == 4:
@@ -228,26 +235,6 @@ if st.button("💰 Abrechnen") and game:
 st.subheader("📊 Historie")
 
 if st.session_state.history:
-    # ============================
-# 📌 LETZTER SPIELTAG
-# ============================
-if st.session_state.last_day_result:
-
-    st.subheader("📌 Letzter Spieltag")
-
-    df_last = pd.DataFrame(
-        list(st.session_state.last_day_result.items()),
-        columns=["Spieler", "Ergebnis"]
-    )
-
-    st.dataframe(df_last, use_container_width=True)
-
-# ============================
-# 📊 HISTORIE
-# ============================
-st.subheader("📊 Historie")
-
-if st.session_state.history:
     st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
 
 # ============================
@@ -259,7 +246,7 @@ for p, v in st.session_state.balance.items():
     st.write(f"{p}: {v:.2f} €")
 
 # ============================
-# ENDE SPIELTAG
+# SPIELTAG BEENDEN
 # ============================
 if st.button("🏁 Spieltag beenden"):
 
