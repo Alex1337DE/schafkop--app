@@ -22,14 +22,16 @@ if "step" not in st.session_state:
     st.session_state.balance = {}
     st.session_state.round = 1
     st.session_state.dealer = 0
-
     st.session_state.history = []
 
+    # 👉 NEU: letzter abgeschlossener Spieltag
+    st.session_state.last_day_result = None
+
+    # Kreuzmodus
     st.session_state.kreuz_mode = False
     st.session_state.kreuz_left = 0
 
-    st.session_state.schneider = False
-    st.session_state.schwarz = False
+    # Inputs
     st.session_state.lauf = 0
     st.session_state.leger = 0
     st.session_state.hint = ""
@@ -37,15 +39,14 @@ if "step" not in st.session_state:
 st.title("🃏 Schafkopf Rechner")
 
 # ============================
-# LETZTES SPIEL ANZEIGEN
+# 🔥 LETZTES SPIELTAGERGEBNIS (GANZ OBEN!)
 # ============================
-if st.session_state.history:
-    last = st.session_state.history[-1]
-    st.subheader("📌 Letztes Spiel")
-    st.write(last)
+if st.session_state.last_day_result:
+    st.subheader("📌 Letzter Spieltag")
+    st.dataframe(pd.DataFrame(st.session_state.last_day_result))
 
 # ============================
-# SETUP
+# SETUP: SPIELERANZAHL
 # ============================
 if st.session_state.step == 1:
 
@@ -58,6 +59,9 @@ if st.session_state.step == 1:
 
     st.stop()
 
+# ============================
+# SETUP: NAMEN
+# ============================
 if st.session_state.step == 2:
 
     names = []
@@ -76,46 +80,31 @@ if st.session_state.step == 2:
 # HELPERS
 # ============================
 def reset_inputs():
-    st.session_state.schneider = False
-    st.session_state.schwarz = False
     st.session_state.lauf = 0
     st.session_state.leger = 0
     st.session_state.hint = ""
 
-# ============================
-# UI HEADER
-# ============================
 players = st.session_state.players
 
 st.info(f"Runde: {st.session_state.round}")
 
-if st.session_state.kreuz_mode:
-    st.error(f"🔥 KREUZMODUS aktiv ({st.session_state.kreuz_left}/4)")
-
 # ============================
-# SPIEL
-# ============================
-game = None
-winner = []
-solo = None
-
-# ============================
-# KREUZSPIEL (FIXE PAARE)
+# KREUZSPIEL (fixe Paare)
 # ============================
 if st.session_state.kreuz_mode:
 
     st.subheader("🔥 Kreuzspiel")
 
-    pair1 = [players[0], players[2]]  # 1 + 3
-    pair2 = [players[1], players[3]]  # 2 + 4
+    pair1 = players[:2]
+    pair2 = players[2:4]
 
     st.write(f"🟦 Paar 1: {pair1}")
     st.write(f"🟥 Paar 2: {pair2}")
 
-    st.session_state.kreuz_lauf = st.number_input("Laufende", 0, 10, 0)
-    st.session_state.kreuz_leger = st.number_input("Leger", 0, 3, 0)
-    st.session_state.kreuz_schneider = st.checkbox("Schneider")
-    st.session_state.kreuz_schwarz = st.checkbox("Schwarz")
+    kreuz_lauf = st.number_input("Laufende", 0, 10, 0)
+    kreuz_leger = st.number_input("Leger", 0, 3, 0)
+    kreuz_schneider = st.checkbox("Schneider")
+    kreuz_schwarz = st.checkbox("Schwarz")
 
     winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
@@ -140,13 +129,11 @@ else:
     result = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
 
     if game == "Rufspiel":
-        winner = st.multiselect("Gewinner (2)", players)
+        winner = st.multiselect("Gewinner", players)
 
     elif game in SOLOS:
         solo = st.selectbox("Solo Spieler", players)
 
-    st.session_state.schneider = st.checkbox("Schneider")
-    st.session_state.schwarz = st.checkbox("Schwarz")
     st.session_state.lauf = st.number_input("Laufende", 0, 10, 0)
     st.session_state.leger = st.number_input("Leger", 0, 3, 0)
     st.session_state.hint = st.text_input("Hinweis")
@@ -160,7 +147,6 @@ if st.button("💰 Abrechnen") and game:
         "Nr": st.session_state.round,
         "Zeit": datetime.now().strftime("%d.%m.%Y %H:%M"),
         "Spiel": game,
-        "Leger": st.session_state.leger,
         "Hinweis": st.session_state.hint
     }
 
@@ -174,23 +160,20 @@ if st.button("💰 Abrechnen") and game:
 
         BASE = 0.10
 
-        b = BASE
-        b += st.session_state.kreuz_lauf * LAUF
+        b = BASE + kreuz_lauf * LAUF
 
-        if st.session_state.kreuz_schneider:
+        if kreuz_schneider:
             b += 0.10
-        if st.session_state.kreuz_schwarz:
+        if kreuz_schwarz:
             b += 0.10
 
-        pot = b * len(players) * (2 ** st.session_state.kreuz_leger)
+        pot = b * len(players) * (2 ** kreuz_leger)
         per = pot / len(players)
 
         if winner_pair == "Paar 1":
-            win = pair1
-            lose = pair2
+            win, lose = pair1, pair2
         else:
-            win = pair2
-            lose = pair1
+            win, lose = pair2, pair1
 
         for p in win:
             row[p] = per
@@ -199,8 +182,6 @@ if st.button("💰 Abrechnen") and game:
         for p in lose:
             row[p] = -per
             st.session_state.balance[p] -= per
-
-        row["Hinweis"] += f" | KREUZ"
 
         st.session_state.kreuz_left -= 1
 
@@ -222,38 +203,13 @@ if st.button("💰 Abrechnen") and game:
 
         factor = 1 if result == "Gewonnen" else -1
 
-        b = base(game)
-        b += st.session_state.lauf * LAUF
-
+        b = base(game) + st.session_state.lauf * LAUF
         pot = b * len(players) * (2 ** st.session_state.leger)
         per = pot / len(players)
 
-        if game == "Rufspiel":
-
-            for p in players:
-                if p in winner:
-                    v = per * factor
-                else:
-                    v = -per * factor
-                st.session_state.balance[p] += v
-                row[p] = v
-
-        elif game in SOLOS:
-
-            for p in players:
-                if p == solo:
-                    v = per * (len(players)-1) * factor
-                else:
-                    v = -per * factor
-                st.session_state.balance[p] += v
-                row[p] = v
-
-        elif game == "Ramsch":
-
-            for p in players:
-                v = -per
-                st.session_state.balance[p] += v
-                row[p] = v
+        for p in players:
+            row[p] = per * factor if p in (winner if game == "Rufspiel" else [solo]) else -per * factor
+            st.session_state.balance[p] += row[p]
 
         if game == "Herzsolo" and len(players) == 4:
             st.session_state.kreuz_mode = True
@@ -283,6 +239,18 @@ for p, v in st.session_state.balance.items():
     st.write(f"{p}: {v:.2f} €")
 
 # ============================
+# ENDE SPIELTAG
+# ============================
+if st.button("🏁 Spieltag beenden"):
+
+    st.session_state.last_day_result = st.session_state.balance.copy()
+
+    st.session_state.history = []
+    st.session_state.round = 1
+
+    st.rerun()
+
+# ============================
 # UNDO
 # ============================
 if st.button("↩️ Undo"):
@@ -296,12 +264,3 @@ if st.button("↩️ Undo"):
         st.session_state.round -= 1
 
         st.rerun()
-
-# ============================
-# EXPORT
-# ============================
-st.download_button(
-    "📥 CSV Export",
-    data=pd.DataFrame(st.session_state.history).to_csv(index=False),
-    file_name="schafkopf.csv"
-)
