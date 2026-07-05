@@ -13,7 +13,7 @@ LAUF = 0.05
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
 
 # ============================
-# STATE
+# STATE INIT
 # ============================
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -25,13 +25,11 @@ if "step" not in st.session_state:
 
     st.session_state.history = []
 
+    # Kreuzmodus
     st.session_state.kreuz_mode = False
     st.session_state.kreuz_left = 0
 
-    # inputs
-    st.session_state.game = None
-    st.session_state.winner = []
-    st.session_state.solo = None
+    # Inputs
     st.session_state.schneider = False
     st.session_state.schwarz = False
     st.session_state.lauf = 0
@@ -45,7 +43,7 @@ st.title("🃏 Schafkopf Rechner")
 # ============================
 if st.session_state.step == 1:
 
-    n = st.selectbox("4 oder 5 Spieler", [4, 5])
+    n = st.selectbox("Spieleranzahl", [4, 5])
 
     if st.button("Weiter"):
         st.session_state.num = n
@@ -71,56 +69,36 @@ if st.session_state.step == 2:
 # ============================
 # HELPERS
 # ============================
-def active_players():
-    if len(st.session_state.players) == 5:
-        pause = st.session_state.players[st.session_state.dealer % 5]
-        return [p for p in st.session_state.players if p != pause], pause
-    return st.session_state.players, None
-
-
 def reset_inputs():
-    st.session_state.game = None
-    st.session_state.winner = []
-    st.session_state.solo = None
     st.session_state.schneider = False
     st.session_state.schwarz = False
     st.session_state.lauf = 0
     st.session_state.leger = 0
     st.session_state.hint = ""
 
-def make_pairs(players):
-    return [
-        (players[0], players[1]),
-        (players[2], players[3])
-    ]
-
 # ============================
-# UI
+# UI HEADER
 # ============================
-players, pause = active_players()
+players = st.session_state.players
 
 st.info(f"Runde: {st.session_state.round}")
-if pause:
-    st.warning(f"Pause: {pause}")
 
 if st.session_state.kreuz_mode:
-    st.error(f"🔥 KREUZRUNDE {5 - st.session_state.kreuz_left}/4 AKTIV")
+    st.error(f"🔥 KREUZMODUS aktiv ({st.session_state.kreuz_left}/4)")
 
 # ============================
-# SPIEL LOGIK
+# SPIELMODUS
 # ============================
 game = None
 winner = []
 solo = None
 
-# ----------------------------
-# KREUZ MODUS
-# ----------------------------
+# ============================
+# KREUZSPIEL
+# ============================
 if st.session_state.kreuz_mode:
 
     st.subheader("🔥 Kreuzspiel")
-
-    st.info("Paare + Zusatzwerte für diese Runde")
 
     pair1 = st.multiselect("🟦 Paar 1", players)
     pair2 = st.multiselect("🟥 Paar 2", players)
@@ -133,28 +111,42 @@ if st.session_state.kreuz_mode:
     winner_pair = None
 
     if len(pair1) == 2 and len(pair2) == 2:
-
         if set(pair1).isdisjoint(set(pair2)):
-
-            winner_pair = st.radio(
-                "Gewonnenes Paar",
-                ["Paar 1", "Paar 2"]
-            )
-
+            winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
         else:
             st.error("❌ Spieler doppelt vergeben")
 
     game = "KREUZ"
 
 # ============================
-# CALC
+# NORMALE SPIELE
 # ============================
-def base(g):
-    if g == "Rufspiel":
-        return BASE_RUF
-    if g in SOLOS:
-        return BASE_SOLO
-    return BASE_RAM
+else:
+
+    games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
+
+    cols = st.columns(4)
+    selected = []
+
+    for i, g in enumerate(games):
+        if cols[i % 4].checkbox(g):
+            selected.append(g)
+
+    game = selected[0] if selected else None
+
+    result = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
+
+    if game == "Rufspiel":
+        winner = st.multiselect("Gewinner (2)", players)
+
+    elif game in SOLOS:
+        solo = st.selectbox("Solo Spieler", players)
+
+    st.session_state.schneider = st.checkbox("Schneider")
+    st.session_state.schwarz = st.checkbox("Schwarz")
+    st.session_state.lauf = st.number_input("Laufende", 0, 10, 0)
+    st.session_state.leger = st.number_input("Leger", 0, 3, 0)
+    st.session_state.hint = st.text_input("Hinweis")
 
 # ============================
 # ABRECHNUNG
@@ -169,7 +161,7 @@ if st.button("💰 Abrechnen") and game:
         "Hinweis": st.session_state.hint
     }
 
-    for p in st.session_state.players:
+    for p in players:
         row[p] = 0.0
 
     # ============================
@@ -177,54 +169,55 @@ if st.button("💰 Abrechnen") and game:
     # ============================
     if st.session_state.kreuz_mode:
 
-    BASE = 0.10  # wie Rufspiel
-    LAUF = 0.05
+        BASE = 0.10
 
-    b = BASE
-    b += st.session_state.kreuz_lauf * LAUF
+        b = BASE
+        b += st.session_state.kreuz_lauf * LAUF
 
-    if st.session_state.kreuz_schneider:
-        b += 0.10
-    if st.session_state.kreuz_schwarz:
-        b += 0.10
+        if st.session_state.kreuz_schneider:
+            b += 0.10
+        if st.session_state.kreuz_schwarz:
+            b += 0.10
 
-    pot = b * len(players) * (2 ** st.session_state.kreuz_leger)
-    per = pot / len(players)
+        pot = b * len(players) * (2 ** st.session_state.kreuz_leger)
+        per = pot / len(players)
 
-    if winner_pair == "Paar 1":
-        win = pair1
-        lose = pair2
-    else:
-        win = pair2
-        lose = pair1
+        if winner_pair == "Paar 1":
+            win = pair1
+            lose = pair2
+        else:
+            win = pair2
+            lose = pair1
 
-    for p in win:
-        row[p] = per
-        st.session_state.balance[p] += per
+        for p in win:
+            row[p] = per
+            st.session_state.balance[p] += per
 
-    for p in lose:
-        row[p] = -per
-        st.session_state.balance[p] -= per
+        for p in lose:
+            row[p] = -per
+            st.session_state.balance[p] -= per
 
-    row["Hinweis"] += (
-        f" | KREUZ L:{st.session_state.kreuz_lauf}"
-        f" S:{st.session_state.kreuz_schneider}"
-        f" SZ:{st.session_state.kreuz_schwarz}"
-        f" LEGER:{st.session_state.kreuz_leger}"
-    )
+        row["Hinweis"] += f" | KREUZ L:{st.session_state.kreuz_lauf} S:{st.session_state.kreuz_schneider} SZ:{st.session_state.kreuz_schwarz}"
 
-    st.session_state.kreuz_left -= 1
+        st.session_state.kreuz_left -= 1
 
-    if st.session_state.kreuz_left <= 0:
-        st.session_state.kreuz_mode = False
-        reset_inputs()
+        if st.session_state.kreuz_left <= 0:
+            st.session_state.kreuz_mode = False
+            reset_inputs()
 
     # ============================
-    # NORMALES SPIEL
+    # NORMALE SPIELE
     # ============================
     else:
 
         factor = 1 if result == "Gewonnen" else -1
+
+        def base(g):
+            if g == "Rufspiel":
+                return BASE_RUF
+            if g in SOLOS:
+                return BASE_SOLO
+            return BASE_RAM
 
         b = base(game)
         b += st.session_state.lauf * LAUF
@@ -239,7 +232,6 @@ if st.button("💰 Abrechnen") and game:
                     v = per * factor
                 else:
                     v = -per * factor
-
                 st.session_state.balance[p] += v
                 row[p] = v
 
@@ -250,7 +242,6 @@ if st.button("💰 Abrechnen") and game:
                     v = per * (len(players)-1) * factor
                 else:
                     v = -per * factor
-
                 st.session_state.balance[p] += v
                 row[p] = v
 
@@ -268,9 +259,7 @@ if st.button("💰 Abrechnen") and game:
         reset_inputs()
 
     st.session_state.history.append(row)
-
     st.session_state.round += 1
-    st.session_state.dealer += 1
 
     st.rerun()
 
@@ -293,12 +282,12 @@ for p, v in st.session_state.balance.items():
 # ============================
 # UNDO
 # ============================
-if st.button("↩️ Undo letzte Runde"):
+if st.button("↩️ Undo"):
 
     if st.session_state.history:
         last = st.session_state.history.pop()
 
-        for p in st.session_state.players:
+        for p in players:
             st.session_state.balance[p] -= last.get(p, 0)
 
         st.session_state.round -= 1
