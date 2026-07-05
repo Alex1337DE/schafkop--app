@@ -228,7 +228,15 @@ if st.button("💰 Abrechnen") and game:
 st.subheader("📊 Historie")
 
 if st.session_state.history:
-    st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
+    if st.session_state.last_day_result:
+    st.subheader("📌 Letzter Spieltag")
+
+    df_last = pd.DataFrame(
+        list(st.session_state.last_day_result.items()),
+        columns=["Spieler", "Ergebnis"]
+    )
+
+    st.dataframe(df_last, use_container_width=True)
 
 # ============================
 # KONTO
