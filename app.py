@@ -23,11 +23,8 @@ if "step" not in st.session_state:
     st.session_state.balance = {}
     st.session_state.round = 1
 
-    # 🔥 Spieltag-Historie (mehrere Tage)
-    st.session_state.days = []
-
-    # aktueller Spieltag
     st.session_state.history = []
+
     st.session_state.last_day = None
 
     st.session_state.kreuz_mode = False
@@ -40,9 +37,9 @@ if "step" not in st.session_state:
 st.title("🃏 Schafkopf Rechner")
 
 # ============================
-# 🔥 STARTSEITE (immer sichtbar)
+# LETZTER SPIELTAG
 # ============================
-st.subheader("📊 Letzter Spieltag")
+st.subheader("📌 Letzter Spieltag")
 
 if st.session_state.last_day:
     df_last = pd.DataFrame(
@@ -96,6 +93,17 @@ players = st.session_state.players
 st.info(f"Runde: {st.session_state.round}")
 
 # ============================
+# SPIELAUSWAHL (FIX: nur 1 Spiel!)
+# ============================
+games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
+game = st.radio("Spielauswahl", games)
+
+result = None
+winner = []
+solo = None
+loser = None
+
+# ============================
 # KREUZSPIEL
 # ============================
 if st.session_state.kreuz_mode:
@@ -112,31 +120,18 @@ if st.session_state.kreuz_mode:
 
     winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
-    game = "KREUZ"
-
 else:
 
-    games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
-
-    cols = st.columns(4)
-    selected = []
-
-    for i, g in enumerate(games):
-        if cols[i % 4].checkbox(g):
-            selected.append(g)
-
-    game = selected[0] if selected else None
-
     result = st.radio("Ergebnis", ["Gewonnen", "Verloren"], horizontal=True)
-
-    winner = []
-    solo = None
 
     if game == "Rufspiel":
         winner = st.multiselect("Gewinner", players)
 
     elif game in SOLOS:
         solo = st.selectbox("Solo Spieler", players)
+
+    elif game == "Ramsch":
+        loser = st.selectbox("Verlierer (Ramsch)", players)
 
     st.session_state.lauf = st.number_input("Laufende", 0, 10, 0)
     st.session_state.leger = st.number_input("Leger", 0, 3, 0)
@@ -147,7 +142,11 @@ else:
 # ============================
 if st.button("💰 Abrechnen") and game:
 
-    row = {"Zeit": datetime.now().strftime("%d.%m.%Y %H:%M"), "Spiel": game}
+    row = {
+        "Zeit": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "Spiel": game
+    }
+
     for p in players:
         row[p] = 0.0
 
@@ -199,19 +198,34 @@ if st.button("💰 Abrechnen") and game:
 
         factor = 1 if result == "Gewonnen" else -1
 
-        per = (base(game) + st.session_state.lauf * LAUF) * len(players) / len(players)
+        per = (base(game) + st.session_state.lauf * LAUF) * len(players)
         per *= (2 ** st.session_state.leger)
+        per /= len(players)
 
-        for p in players:
-            if game == "Rufspiel":
+        if game == "Rufspiel":
+
+            for p in players:
                 val = per * factor if p in winner else -per * factor
-            elif game in SOLOS:
-                val = per * factor * (len(players)-1) if p == solo else -per * factor
-            else:
-                val = -per
+                st.session_state.balance[p] += val
+                row[p] = val
 
-            st.session_state.balance[p] += val
-            row[p] = val
+        elif game in SOLOS:
+
+            for p in players:
+                val = per * factor * (len(players)-1) if p == solo else -per * factor
+                st.session_state.balance[p] += val
+                row[p] = val
+
+        elif game == "Ramsch":
+
+            for p in players:
+                if p == loser:
+                    val = per * (len(players)-1)
+                else:
+                    val = -per
+
+                st.session_state.balance[p] += val
+                row[p] = val
 
         if game == "Herzsolo" and len(players) == 4:
             st.session_state.kreuz_mode = True
@@ -219,17 +233,15 @@ if st.button("💰 Abrechnen") and game:
 
         reset_inputs()
 
-    # ============================
-    # SPEICHERN SPIELTAGSHISTORIE
-    # ============================
     st.session_state.history.append(row)
+    st.session_state.round += 1
 
     st.rerun()
 
 # ============================
 # HISTORIE
 # ============================
-st.subheader("📊 Spielhistorie")
+st.subheader("📊 Historie")
 
 if st.session_state.history:
     st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
@@ -252,14 +264,26 @@ if st.button("🏁 Spieltag beenden"):
         "results": st.session_state.balance.copy()
     }
 
-    st.session_state.days.append(st.session_state.last_day)
-
-    # reset kompletter Spieltag
     st.session_state.history = []
     st.session_state.round = 1
     st.session_state.balance = {p: 0 for p in players}
     st.session_state.kreuz_mode = False
 
-    st.session_state.step = 1  # zurück zur Startseite
+    st.session_state.step = 1
 
     st.rerun()
+
+# ============================
+# UNDO
+# ============================
+if st.button("↩️ Undo"):
+
+    if st.session_state.history:
+        last = st.session_state.history.pop()
+
+        for p in players:
+            st.session_state.balance[p] -= last.get(p, 0)
+
+        st.session_state.round -= 1
+
+        st.rerun()
