@@ -144,7 +144,7 @@ if st.session_state.state == "GAME":
 
         winner_pair = st.radio("Gewonnenes Paar", ["Paar 1", "Paar 2"])
 
-        game_mode = "KREUZ"
+        game_mode = None
 
         data = {
             "lauf": kreuz_lauf,
@@ -188,7 +188,10 @@ if st.session_state.state == "GAME":
                 st.session_state.kreuz_solo = None
 
         else:
-            changes = calc(game_mode, players, data)
+            if st.session_state.kreuz_active:
+                changes = calc_cross(players, data)
+        else:
+                changes = calc(game_mode, players, data)
 
             # HERZSOLO TRIGGER
             if game_mode == "Herzsolo" and len(players) == 4:
