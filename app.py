@@ -1,8 +1,27 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
+from datetime import datetime
 
 # ----------------------------
-# KONSTANTEN
+# DB SETUP
+# ----------------------------
+conn = sqlite3.connect("schafkopf.db", check_same_thread=False)
+c = conn.cursor()
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS games (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_nr INTEGER,
+    date TEXT,
+    game TEXT,
+    data TEXT
+)
+""")
+conn.commit()
+
+# ----------------------------
+# CONSTANTS
 # ----------------------------
 BASE_RUF = 0.10
 BASE_SOLO = 0.20
@@ -10,7 +29,6 @@ BASE_RAM = 0.10
 LAUF = 0.05
 
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
-ALLE = ["Rufspiel"] + SOLOS + ["Ramsch"]
 
 # ----------------------------
 # STATE
@@ -18,37 +36,41 @@ ALLE = ["Rufspiel"] + SOLOS + ["Ramsch"]
 if "step" not in st.session_state:
     st.session_state.step = 1
     st.session_state.players = []
-    st.session_state.num = 0
     st.session_state.balance = {}
     st.session_state.round = 1
     st.session_state.dealer = 0
+    st.session_state.last_row = None
 
-    st.session_state.history = []
+st.set_page_config(page_title="Schafkopf Poker App", layout="wide")
 
-    st.session_state.kreuz_mode = False
-    st.session_state.kreuz_left = 0
+# ----------------------------
+# UI STYLE (Poker-Look simpel)
+# ----------------------------
+st.markdown("""
+<style>
+.block {padding:15px; border-radius:15px; background:#111; color:white;}
+.big {font-size:20px; font-weight:bold;}
+</style>
+""", unsafe_allow_html=True)
 
-st.title("🃏 Schafkopf Rechner")
+st.title("🃏 Schafkopf Poker App")
 
 # ============================================================
-# STEP 1
+# SETUP
 # ============================================================
 if st.session_state.step == 1:
 
-    st.subheader("👥 Anzahl Spieler")
+    st.subheader("👥 Spieleranzahl")
 
-    n = st.selectbox("4 oder 5 Spieler", [4, 5])
+    num = st.selectbox("4 oder 5 Spieler", [4, 5])
 
     if st.button("Weiter"):
-        st.session_state.num = n
+        st.session_state.num = num
         st.session_state.step = 2
         st.rerun()
 
     st.stop()
 
-# ============================================================
-# STEP 2
-# ============================================================
 if st.session_state.step == 2:
 
     st.subheader("✏️ Namen")
@@ -66,7 +88,7 @@ if st.session_state.step == 2:
     st.stop()
 
 # ============================================================
-# HELPER
+# ACTIVE PLAYERS
 # ============================================================
 def active_players():
     if len(st.session_state.players) == 5:
@@ -74,30 +96,40 @@ def active_players():
         return [p for p in st.session_state.players if p != pause], pause
     return st.session_state.players, None
 
-
-def base(game):
-    if game == "Rufspiel":
-        return BASE_RUF
-    if game in SOLOS:
-        return BASE_SOLO
-    return BASE_RAM
-
-
-# ============================================================
-# GAME UI
-# ============================================================
 players, pause = active_players()
 
-st.info(f"Runde: {st.session_state.round}")
-if pause:
-    st.warning(f"Pause-Spieler: {pause}")
+# ============================================================
+# HEADER CARD
+# ============================================================
+st.markdown(f"""
+<div class="block">
+<div class="big">Runde {st.session_state.round}</div>
+Pause: {pause if pause else "-"} <br>
+Datum: {datetime.now().strftime("%d.%m.%Y %H:%M")}
+</div>
+""", unsafe_allow_html=True)
 
-if st.session_state.kreuz_mode:
-    st.error(f"🔥 Kreuzrunde aktiv ({st.session_state.kreuz_left}/4)")
+# ============================================================
+# SPIELAUSWAHL (CHECKBOX STYLE)
+# ============================================================
+st.subheader("🎮 Spiel auswählen")
 
-game = st.selectbox("Spiel", ALLE)
+cols = st.columns(4)
 
-# 🟢 NEU: Spielausgang
+game_states = {}
+
+all_games = ["Rufspiel"] + SOLOS + ["Ramsch"]
+
+for i, g in enumerate(all_games):
+    game_states[g] = cols[i % 4].checkbox(g)
+
+selected_game = [g for g, v in game_states.items() if v]
+
+game = selected_game[0] if selected_game else None
+
+# ============================================================
+# INPUTS
+# ============================================================
 result = st.radio("Spielausgang", ["Gewonnen", "Verloren"], horizontal=True)
 
 winner = []
@@ -116,82 +148,92 @@ leger = st.number_input("Leger", 0, 3, 0)
 hint = st.text_input("Hinweis")
 
 # ============================================================
+# HELPERS
+# ============================================================
+def base(g):
+    if g == "Rufspiel":
+        return BASE_RUF
+    if g in SOLOS:
+        return BASE_SOLO
+    return BASE_RAM
+
+def save_db(row):
+    c.execute(
+        "INSERT INTO games (round_nr, date, game, data) VALUES (?, ?, ?, ?)",
+        (
+            st.session_state.round,
+            datetime.now().isoformat(),
+            game,
+            str(row)
+        )
+    )
+    conn.commit()
+
+def load_db():
+    df = pd.read_sql("SELECT * FROM games", conn)
+    return df
+
+def delete_last():
+    c.execute("DELETE FROM games ORDER BY id DESC LIMIT 1")
+    conn.commit()
+
+# ============================================================
 # ABBRECHNUNG
 # ============================================================
-if st.button("💰 Abrechnen"):
+if st.button("💰 Abrechnen") and game:
 
     factor = 1 if result == "Gewonnen" else -1
 
-    base_val = base(game)
-
+    b = base(game)
     if schneider:
-        base_val += 0.10
+        b += 0.10
     if schwarz:
-        base_val += 0.10
+        b += 0.10
+    b += lauf * LAUF
 
-    base_val += lauf * LAUF
-
-    pot = base_val * len(players)
-    pot *= (2 ** leger)
-
+    pot = b * len(players) * (2 ** leger)
     per = pot / len(players)
 
     row = {
-        "Nr": st.session_state.round,
-        "Spiel": game,
-        "Leger": leger,
-        "Hinweis": hint + (" | VERLOREN" if factor == -1 else "")
+        "round": st.session_state.round,
+        "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        "game": game,
+        "leger": leger,
+        "hint": hint
     }
 
     for p in st.session_state.players:
-        row[p] = 0.0
+        row[p] = 0
 
-    # ----------------------------
-    # RUF
-    # ----------------------------
     if game == "Rufspiel":
         for p in players:
             if p in winner:
-                st.session_state.balance[p] += per * factor
-                row[p] = per * factor
+                val = per * factor
             else:
-                st.session_state.balance[p] -= per * factor
-                row[p] = -per * factor
+                val = -per * factor
 
-    # ----------------------------
-    # SOLO
-    # ----------------------------
+            st.session_state.balance[p] += val
+            row[p] = val
+
     elif game in SOLOS:
         for p in players:
             if p == solo:
-                st.session_state.balance[p] += per * (len(players) - 1) * factor
-                row[p] = per * (len(players) - 1) * factor
+                val = per * (len(players)-1) * factor
             else:
-                st.session_state.balance[p] -= per * factor
-                row[p] = -per * factor
+                val = -per * factor
 
-        if game == "Herzsolo" and len(players) == 4:
-            st.session_state.kreuz_mode = True
-            st.session_state.kreuz_left = 4
+            st.session_state.balance[p] += val
+            row[p] = val
 
-    # ----------------------------
-    # RAMSCH
-    # ----------------------------
     elif game == "Ramsch":
         for p in players:
-            st.session_state.balance[p] -= per
-            row[p] = -per
+            val = -per
+            st.session_state.balance[p] += val
+            row[p] = val
 
-    # ----------------------------
-    # KREUZ
-    # ----------------------------
-    if st.session_state.kreuz_mode:
-        row["Hinweis"] += " | Kreuzrunde"
-        st.session_state.kreuz_left -= 1
-        if st.session_state.kreuz_left <= 0:
-            st.session_state.kreuz_mode = False
+    st.session_state.last_row = row
+    save_db(row)
 
-    st.session_state.history.append(row)
     st.session_state.round += 1
     st.session_state.dealer += 1
 
@@ -199,15 +241,15 @@ if st.button("💰 Abrechnen"):
     st.rerun()
 
 # ============================================================
-# HISTORIE
+# HISTORY (DB)
 # ============================================================
-st.subheader("📊 Historie")
+st.subheader("📊 Historie (DB)")
 
-if st.session_state.history:
-    st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
+df = load_db()
+st.dataframe(df)
 
 # ============================================================
-# STAND
+# BALANCE
 # ============================================================
 st.subheader("💰 Kontostand")
 
@@ -215,19 +257,30 @@ for p, v in st.session_state.balance.items():
     st.write(f"{p}: {v:.2f} €")
 
 # ============================================================
-# ENDE
+# UNDO
+# ============================================================
+if st.button("↩️ Undo letzte Runde"):
+
+    delete_last()
+
+    if st.session_state.last_row:
+        for p in st.session_state.players:
+            st.session_state.balance[p] -= st.session_state.last_row.get(p, 0)
+
+    st.session_state.round = max(1, st.session_state.round - 1)
+
+    st.warning("Letzte Runde gelöscht")
+    st.rerun()
+
+# ============================================================
+# END GAME
 # ============================================================
 if st.button("🏁 Spieltag beenden"):
 
-    st.subheader("📊 Endstand")
-
-    for p, v in st.session_state.balance.items():
-        st.write(f"{p}: {v:.2f} €")
+    st.success("Spieltag beendet")
 
     st.download_button(
-        "📥 CSV Export",
-        data=pd.DataFrame(st.session_state.history).to_csv(index=False),
-        file_name="schafkopf_spieltag.csv"
+        "📥 Export DB",
+        data=load_db().to_csv(index=False),
+        file_name="schafkopf_db.csv"
     )
-
-    st.success("Spieltag beendet")
