@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
+import json
 from datetime import datetime
 
 # ============================
@@ -11,6 +13,35 @@ BASE_RAM = 0.10
 LAUF = 0.05
 
 SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
+
+# ============================
+# DB
+# ============================
+def get_conn():
+    return sqlite3.connect("schafkopf.db", check_same_thread=False)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS days (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            results TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def load_last_day():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT date, results FROM days ORDER BY id DESC LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    return row
 
 # ============================
 # STATE INIT
@@ -25,8 +56,6 @@ if "step" not in st.session_state:
 
     st.session_state.history = []
 
-    st.session_state.last_day = None
-
     st.session_state.kreuz_mode = False
     st.session_state.kreuz_left = 0
 
@@ -37,15 +66,20 @@ if "step" not in st.session_state:
 st.title("🃏 Schafkopf Rechner")
 
 # ============================
-# LETZTER SPIELTAG
+# LETZTER SPIELTAG (DB)
 # ============================
 st.subheader("📌 Letzter Spieltag")
 
-if st.session_state.last_day:
+last = load_last_day()
+
+if last:
+    results = json.loads(last[1])
+
     df_last = pd.DataFrame(
-        list(st.session_state.last_day["results"].items()),
+        list(results.items()),
         columns=["Spieler", "Ergebnis"]
     )
+
     st.dataframe(df_last, use_container_width=True)
 else:
     st.info("Noch kein abgeschlossener Spieltag")
@@ -93,7 +127,7 @@ players = st.session_state.players
 st.info(f"Runde: {st.session_state.round}")
 
 # ============================
-# SPIELAUSWAHL (FIX: nur 1 Spiel!)
+# SPIELAUSWAHL (nur 1 Spiel)
 # ============================
 games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
 game = st.radio("Spielauswahl", games)
@@ -104,11 +138,11 @@ solo = None
 loser = None
 
 # ============================
-# KREUZSPIEL
+# SPIELOPTIONEN
 # ============================
 if st.session_state.kreuz_mode:
 
-    st.subheader("🔥 Kreuzspiel")
+    st.subheader("🔥 Kreuzspiel aktiv")
 
     pair1 = players[:2]
     pair2 = players[2:4]
@@ -198,9 +232,10 @@ if st.button("💰 Abrechnen") and game:
 
         factor = 1 if result == "Gewonnen" else -1
 
-        per = (base(game) + st.session_state.lauf * LAUF) * len(players)
+        per = (base(game) + st.session_state.lauf * LAUF)
         per *= (2 ** st.session_state.leger)
-        per /= len(players)
+
+        per = per * len(players) / len(players)
 
         if game == "Rufspiel":
 
@@ -241,7 +276,7 @@ if st.button("💰 Abrechnen") and game:
 # ============================
 # HISTORIE
 # ============================
-st.subheader("📊 Historie")
+st.subheader("📊 Spielhistorie")
 
 if st.session_state.history:
     st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
@@ -259,14 +294,23 @@ for p, v in st.session_state.balance.items():
 # ============================
 if st.button("🏁 Spieltag beenden"):
 
-    st.session_state.last_day = {
-        "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
-        "results": st.session_state.balance.copy()
-    }
+    conn = get_conn()
+    c = conn.cursor()
 
+    c.execute(
+        "INSERT INTO days (date, results) VALUES (?, ?)",
+        (
+            datetime.now().strftime("%d.%m.%Y %H:%M"),
+            json.dumps(st.session_state.balance)
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    st.session_state.balance = {p: 0 for p in players}
     st.session_state.history = []
     st.session_state.round = 1
-    st.session_state.balance = {p: 0 for p in players}
     st.session_state.kreuz_mode = False
 
     st.session_state.step = 1
