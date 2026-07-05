@@ -3,77 +3,56 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 
-# ----------------------------
+# ============================
 # DB SETUP
-# ----------------------------
+# ============================
 conn = sqlite3.connect("schafkopf.db", check_same_thread=False)
 c = conn.cursor()
 
-c.execute("""
-CREATE TABLE IF NOT EXISTS games (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_nr INTEGER,
-    date TEXT,
-    game TEXT,
-    data TEXT
-)
-""")
-conn.commit()
-
 # ----------------------------
-# CONSTANTS
-# ----------------------------
-BASE_RUF = 0.10
-BASE_SOLO = 0.20
-BASE_RAM = 0.10
-LAUF = 0.05
-
-SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
-
-# ----------------------------
-# STATE
+# STATE INIT
 # ----------------------------
 if "step" not in st.session_state:
     st.session_state.step = 1
     st.session_state.players = []
+    st.session_state.num = 0
     st.session_state.balance = {}
     st.session_state.round = 1
     st.session_state.dealer = 0
-    st.session_state.last_row = None
 
-st.set_page_config(page_title="Schafkopf Poker App", layout="wide")
+    st.session_state.kreuz_mode = False
+    st.session_state.kreuz_left = 0
 
-# ----------------------------
-# UI STYLE (Poker-Look simpel)
-# ----------------------------
-st.markdown("""
-<style>
-.block {padding:15px; border-radius:15px; background:#111; color:white;}
-.big {font-size:20px; font-weight:bold;}
-</style>
-""", unsafe_allow_html=True)
+    # inputs
+    st.session_state.game = None
+    st.session_state.winner = []
+    st.session_state.solo = None
+    st.session_state.schneider = False
+    st.session_state.schwarz = False
+    st.session_state.lauf = 0
+    st.session_state.leger = 0
+    st.session_state.hint = ""
 
-st.title("🃏 Schafkopf Poker App")
+st.title("🃏 Schafkopf App")
 
-# ============================================================
-# SETUP
-# ============================================================
+# ============================
+# STEP 1: PLAYERS
+# ============================
 if st.session_state.step == 1:
 
-    st.subheader("👥 Spieleranzahl")
-
-    num = st.selectbox("4 oder 5 Spieler", [4, 5])
+    n = st.selectbox("4 oder 5 Spieler", [4, 5])
 
     if st.button("Weiter"):
-        st.session_state.num = num
+        st.session_state.num = n
         st.session_state.step = 2
         st.rerun()
 
     st.stop()
 
+# ============================
+# STEP 2: NAMEN
+# ============================
 if st.session_state.step == 2:
-
-    st.subheader("✏️ Namen")
 
     names = []
     for i in range(st.session_state.num):
@@ -87,49 +66,72 @@ if st.session_state.step == 2:
 
     st.stop()
 
-# ============================================================
-# ACTIVE PLAYERS
-# ============================================================
+# ============================
+# HELPERS
+# ============================
 def active_players():
     if len(st.session_state.players) == 5:
         pause = st.session_state.players[st.session_state.dealer % 5]
         return [p for p in st.session_state.players if p != pause], pause
     return st.session_state.players, None
 
+
+def reset_inputs():
+    st.session_state.game = None
+    st.session_state.winner = []
+    st.session_state.solo = None
+    st.session_state.schneider = False
+    st.session_state.schwarz = False
+    st.session_state.lauf = 0
+    st.session_state.leger = 0
+    st.session_state.hint = ""
+
+# ============================
+# DB CREATE (DYNAMIC)
+# ============================
+def ensure_table():
+    cols = ["id INTEGER PRIMARY KEY AUTOINCREMENT",
+            "round_nr INTEGER",
+            "date TEXT",
+            "game TEXT",
+            "leger INTEGER",
+            "hint TEXT"]
+
+    for p in st.session_state.players:
+        cols.append(f'"{p}" REAL')
+
+    c.execute(f"CREATE TABLE IF NOT EXISTS games ({', '.join(cols)})")
+    conn.commit()
+
+ensure_table()
+
+# ============================
+# UI HEADER
+# ============================
 players, pause = active_players()
 
-# ============================================================
-# HEADER CARD
-# ============================================================
-st.markdown(f"""
-<div class="block">
-<div class="big">Runde {st.session_state.round}</div>
-Pause: {pause if pause else "-"} <br>
-Datum: {datetime.now().strftime("%d.%m.%Y %H:%M")}
-</div>
-""", unsafe_allow_html=True)
+st.info(f"Runde: {st.session_state.round}")
+if pause:
+    st.warning(f"Pause: {pause}")
 
-# ============================================================
-# SPIELAUSWAHL (CHECKBOX STYLE)
-# ============================================================
-st.subheader("🎮 Spiel auswählen")
+if st.session_state.kreuz_mode:
+    st.error(f"🔥 Kreuzrunde aktiv ({st.session_state.kreuz_left}/4)")
+
+# ============================
+# GAME INPUTS (CHECKBOX STYLE)
+# ============================
+games = ["Rufspiel", "Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo", "Ramsch"]
 
 cols = st.columns(4)
+selected = []
 
-game_states = {}
+for i, g in enumerate(games):
+    if cols[i % 4].checkbox(g):
+        selected.append(g)
 
-all_games = ["Rufspiel"] + SOLOS + ["Ramsch"]
+game = selected[0] if selected else None
+st.session_state.game = game
 
-for i, g in enumerate(all_games):
-    game_states[g] = cols[i % 4].checkbox(g)
-
-selected_game = [g for g, v in game_states.items() if v]
-
-game = selected_game[0] if selected_game else None
-
-# ============================================================
-# INPUTS
-# ============================================================
 result = st.radio("Spielausgang", ["Gewonnen", "Verloren"], horizontal=True)
 
 winner = []
@@ -138,149 +140,162 @@ solo = None
 if game == "Rufspiel":
     winner = st.multiselect("Gewinner (2)", players)
 
-elif game in SOLOS:
+elif game in ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]:
     solo = st.selectbox("Solo Spieler", players)
 
-schneider = st.checkbox("Schneider")
-schwarz = st.checkbox("Schwarz")
-lauf = st.number_input("Laufende", 0, 10, 0)
-leger = st.number_input("Leger", 0, 3, 0)
-hint = st.text_input("Hinweis")
+st.session_state.winner = winner
+st.session_state.solo = solo
 
-# ============================================================
-# HELPERS
-# ============================================================
-def base(g):
-    if g == "Rufspiel":
-        return BASE_RUF
-    if g in SOLOS:
-        return BASE_SOLO
-    return BASE_RAM
+st.session_state.schneider = st.checkbox("Schneider")
+st.session_state.schwarz = st.checkbox("Schwarz")
+st.session_state.lauf = st.number_input("Laufende", 0, 10, 0)
+st.session_state.leger = st.number_input("Leger", 0, 3, 0)
+st.session_state.hint = st.text_input("Hinweis")
 
-def save_db(row):
-    c.execute(
-        "INSERT INTO games (round_nr, date, game, data) VALUES (?, ?, ?, ?)",
-        (
-            st.session_state.round,
-            datetime.now().isoformat(),
-            game,
-            str(row)
-        )
-    )
+# ============================
+# CALC HELPERS
+# ============================
+BASE = {"Rufspiel": 0.10, "Ramsch": 0.10}
+SOLOS = ["Farbsolo", "Geier", "Wenz", "Bettel", "Herzsolo"]
+
+def base(game):
+    if game in SOLOS:
+        return 0.20
+    return BASE.get(game, 0.10)
+
+def save(row):
+    cols = ",".join(row.keys())
+    vals = list(row.values())
+    q = ",".join(["?"] * len(vals))
+    c.execute(f"INSERT INTO games ({cols}) VALUES ({q})", vals)
     conn.commit()
 
-def load_db():
-    df = pd.read_sql("SELECT * FROM games", conn)
-    return df
-
-def delete_last():
-    c.execute("DELETE FROM games ORDER BY id DESC LIMIT 1")
-    conn.commit()
-
-# ============================================================
+# ============================
 # ABBRECHNUNG
-# ============================================================
+# ============================
 if st.button("💰 Abrechnen") and game:
 
     factor = 1 if result == "Gewonnen" else -1
 
     b = base(game)
-    if schneider:
+    if st.session_state.schneider:
         b += 0.10
-    if schwarz:
+    if st.session_state.schwarz:
         b += 0.10
-    b += lauf * LAUF
 
-    pot = b * len(players) * (2 ** leger)
+    b += st.session_state.lauf * 0.05
+
+    pot = b * len(players) * (2 ** st.session_state.leger)
     per = pot / len(players)
 
     row = {
-        "round": st.session_state.round,
+        "round_nr": st.session_state.round,
         "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
         "game": game,
-        "leger": leger,
-        "hint": hint
+        "leger": st.session_state.leger,
+        "hint": st.session_state.hint + (" | VERLOREN" if factor == -1 else "")
     }
 
     for p in st.session_state.players:
-        row[p] = 0
+        row[p] = 0.0
 
+    # -------------------------
+    # RUF
+    # -------------------------
     if game == "Rufspiel":
         for p in players:
             if p in winner:
-                val = per * factor
+                v = per * factor
             else:
-                val = -per * factor
+                v = -per * factor
+            st.session_state.balance[p] += v
+            row[p] = v
 
-            st.session_state.balance[p] += val
-            row[p] = val
-
+    # -------------------------
+    # SOLO
+    # -------------------------
     elif game in SOLOS:
         for p in players:
             if p == solo:
-                val = per * (len(players)-1) * factor
+                v = per * (len(players)-1) * factor
             else:
-                val = -per * factor
+                v = -per * factor
+            st.session_state.balance[p] += v
+            row[p] = v
 
-            st.session_state.balance[p] += val
-            row[p] = val
+        if game == "Herzsolo" and len(players) == 4:
+            st.session_state.kreuz_mode = True
+            st.session_state.kreuz_left = 4
 
+    # -------------------------
+    # RAMSCH
+    # -------------------------
     elif game == "Ramsch":
         for p in players:
-            val = -per
-            st.session_state.balance[p] += val
-            row[p] = val
+            v = -per
+            st.session_state.balance[p] += v
+            row[p] = v
 
-    st.session_state.last_row = row
-    save_db(row)
+    # -------------------------
+    # KREUZ LOGIK
+    # -------------------------
+    if st.session_state.kreuz_mode:
+        row["hint"] += " | KREUZ"
+        st.session_state.kreuz_left -= 1
+        if st.session_state.kreuz_left <= 0:
+            st.session_state.kreuz_mode = False
+
+    save(row)
 
     st.session_state.round += 1
     st.session_state.dealer += 1
 
-    st.success("Abgerechnet!")
+    # ============================
+    # RESET (WICHTIG)
+    # ============================
+    if not st.session_state.kreuz_mode:
+        reset_inputs()
+
     st.rerun()
 
-# ============================================================
-# HISTORY (DB)
-# ============================================================
-st.subheader("📊 Historie (DB)")
+# ============================
+# HISTORY
+# ============================
+st.subheader("📊 Historie")
 
-df = load_db()
-st.dataframe(df)
+df = pd.read_sql("SELECT * FROM games", conn)
+st.dataframe(df, use_container_width=True)
 
-# ============================================================
+# ============================
 # BALANCE
-# ============================================================
+# ============================
 st.subheader("💰 Kontostand")
 
 for p, v in st.session_state.balance.items():
     st.write(f"{p}: {v:.2f} €")
 
-# ============================================================
+# ============================
 # UNDO
-# ============================================================
+# ============================
 if st.button("↩️ Undo letzte Runde"):
 
-    delete_last()
-
-    if st.session_state.last_row:
-        for p in st.session_state.players:
-            st.session_state.balance[p] -= st.session_state.last_row.get(p, 0)
+    c.execute("DELETE FROM games ORDER BY id DESC LIMIT 1")
+    conn.commit()
 
     st.session_state.round = max(1, st.session_state.round - 1)
 
     st.warning("Letzte Runde gelöscht")
     st.rerun()
 
-# ============================================================
+# ============================
 # END GAME
-# ============================================================
+# ============================
 if st.button("🏁 Spieltag beenden"):
 
     st.success("Spieltag beendet")
 
     st.download_button(
-        "📥 Export DB",
-        data=load_db().to_csv(index=False),
-        file_name="schafkopf_db.csv"
+        "📥 Export CSV",
+        data=df.to_csv(index=False),
+        file_name="schafkopf.csv"
     )
